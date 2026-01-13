@@ -8,7 +8,6 @@ This benchmark simulates a real-world scenario: multiple Go servers (we're using
 - 6 separate connection pools (imagine 6 different server instances)
 - Each pool can hold up to 10 connections
 - 5,000 concurrent requests trying to use these 60 total connections
-- That's an 83:1 ratio of requests to connections - ouch!
 
 **What we're testing:**
 - How fast can you actually get a connection when everyone wants one?
@@ -48,24 +47,9 @@ For each test, we're tracking:
 - How many queries per second we can handle
 - Which pool instance handled each request
 
-## Understanding the Numbers
 
-### Good signs:
-- Query times under 500ms
-- QPS above 5,000 (for transaction mode)
-- Warmup giving you a 10%+ boost
 
-### Warning signs:
-- Query times over 1 second
-- QPS under 1,000
-- Lots of "failed to acquire connection" errors
-
-### Red alerts:
-- QPS under 100 (you're probably using session mode wrong)
-- Query times over 60 seconds (things are timing out)
-- "too many clients" errors (PostgreSQL is overwhelmed)
-
-## The Architecture
+## The Diagram
 
 Here's how it all fits together:
 
@@ -163,16 +147,6 @@ docker compose down
 docker compose down -v
 ```
 
-## The Bottom Line
-
-If you're building a high-traffic API:
-- Use PgBouncer in transaction mode
-- Set your min connections equal to max connections
-- Size your pools at 10-20 connections per server
-- Monitor your connection acquisition times
-- Don't use session mode unless you really need session-level features
-
-And remember: this benchmark creates an intentional bottleneck. In production, you'd scale your database connections to match your load. But it's good to know what happens when you hit the limits.
 
 ## Learn More
 
