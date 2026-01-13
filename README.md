@@ -1,9 +1,5 @@
 # PGX Connection Pool Benchmark
 
-Ever wondered how your Go app would handle thousands of concurrent requests hitting the database? This benchmark helps you find out.
-
-We're testing pgx connection pools under realistic (and sometimes brutal) conditions - think 5,000 goroutines fighting over just 60 database connections. It's like Black Friday for your connection pool.
-
 ## What This Does
 
 This benchmark simulates a real-world scenario: multiple Go servers (we're using 6) all trying to talk to the same PostgreSQL database through PgBouncer. Each server has its own connection pool, and we're intentionally creating a bottleneck to see what breaks first.
@@ -20,14 +16,6 @@ This benchmark simulates a real-world scenario: multiple Go servers (we're using
 - What happens after connections sit idle for a while?
 - How much does pre-warming your connection pool help?
 
-## The Results (Spoiler Alert)
-
-Here's what we found:
-
-**PgBouncer Transaction Mode:** 8,400 queries per second ⚡  
-**PgBouncer Session Mode:** 42 queries per second 🐌
-
-Yeah, that's a 200x difference. Session mode basically falls apart under high concurrency because it holds onto connections like they're going out of style.
 
 ## Quick Start
 
@@ -123,34 +111,6 @@ max_db_connections = 50      # The bottleneck - connections to PostgreSQL
 default_pool_size = 50       # PgBouncer's pool size
 ```
 
-## What We Learned
-
-### 1. Transaction mode is king for high concurrency
-
-Session mode holds onto connections for the entire session. Transaction mode releases them immediately after each query. Under load, this makes a massive difference.
-
-### 2. Pre-warming your pools matters
-
-Setting `MinConnections = MaxConnections` gives you about 10% better throughput because all connections are ready to go from the start. No waiting for new connections to be established.
-
-### 3. The query pattern matters
-
-We're using `pool.Query()` and `rows.Close()` instead of manually calling `Acquire()` and `Release()`. This is how most real apps work, and it shows different behavior than the manual approach.
-
-### 4. Multiple pools reveal the real bottleneck
-
-When you simulate multiple servers (6 pools instead of 1), you see where the real bottleneck is - usually at the database or PgBouncer level, not in your application code.
-
-## Common Issues
-
-**"too many clients already"**  
-PostgreSQL has a default limit of 100 connections. With 6 pools of 10 connections each, you're fine. But if you go direct to PostgreSQL without PgBouncer, you'll hit this limit fast.
-
-**Session mode is crazy slow**  
-That's expected! Session mode isn't designed for this kind of workload. It's meant for applications that hold connections for a while. For APIs that do quick queries, use transaction mode.
-
-**Connections not getting released**  
-Make sure you're calling `rows.Close()`. If you forget this, connections leak and your pool gets exhausted.
 
 ## Tweaking the Tests
 
@@ -222,4 +182,3 @@ And remember: this benchmark creates an intentional bottleneck. In production, y
 
 ---
 
-Built this to understand connection pooling better? Same. Hope it helps! 🚀
