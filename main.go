@@ -89,7 +89,7 @@ func main() {
 
 		for _, concurrency := range concurrencyLevels {
 			// Warmup run
-			fmt.Printf("🔥 Warmup Run - Concurrency: %d\n", concurrency)
+			fmt.Printf("Warmup Run - Concurrency: %d\n", concurrency)
 			warmupResult := runBenchmark(config, concurrency, true)
 			allResults = append(allResults, warmupResult)
 
@@ -109,7 +109,7 @@ func main() {
 		}
 
 		// Test idle/release/reacquire scenario
-		fmt.Printf("\n⏸️  Testing Idle Connection Release (10s idle period)\n")
+		fmt.Printf("\n⏸Testing Idle Connection Release (10s idle period)\n")
 		idleResult := runIdleTest(config)
 		fmt.Printf("Idle Test Result: Avg reacquisition time: %v\n\n", idleResult)
 	}
@@ -319,7 +319,7 @@ func printResult(result BenchmarkResult) {
 		runType = "Warmup"
 	}
 
-	fmt.Printf("\n📊 %s Results:\n", runType)
+	fmt.Printf("\n%s Results:\n", runType)
 	fmt.Printf("   Total Duration:        %v\n", result.TotalDuration)
 	fmt.Printf("   Avg Acquisition Time:  %v\n", result.AvgAcquisitionTime)
 	fmt.Printf("   Min Acquisition Time:  %v\n", result.MinAcquisitionTime)
@@ -363,7 +363,7 @@ func generateReport(results []BenchmarkResult) {
 	}
 	defer f.Close()
 
-	reportContent := fmt.Sprintf("PGX Connection Pool Benchmark Results\n")
+	reportContent := "PGX Connection Pool Benchmark Results\n"
 	reportContent += fmt.Sprintf("Generated: %s\n\n", time.Now().Format(time.RFC3339))
 
 	for connType, typeResults := range byType {
@@ -388,7 +388,7 @@ func generateReport(results []BenchmarkResult) {
 
 	f.WriteString(reportContent)
 	fmt.Println(reportContent)
-	fmt.Printf("\n✅ Full report saved to: benchmark_results.txt\n")
+	fmt.Printf("\nFull report saved to: benchmark_results.txt\n")
 }
 
 // getGoroutineID returns the current goroutine ID
