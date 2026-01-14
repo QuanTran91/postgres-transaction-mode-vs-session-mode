@@ -47,6 +47,21 @@ For each test, we're tracking:
 - How many queries per second we can handle
 - Which pool instance handled each request
 
+## Tracing (Optional)
+
+The benchmark automatically exports the **slowest requests** as trace files for analysis in Grafana Tempo.
+
+**Files generated:**
+- `trace_slowest_pgbouncer-session_top200_timestamp.json`
+- `trace_slowest_pgbouncer-transaction_top200_timestamp.json`
+
+**What's in a trace:**
+Each trace shows where time is spent: connection wait → query → scan → release
+
+**To analyze:**
+Upload the JSON files to Grafana Tempo to see which requests were slow and why.
+
+
 
 
 ## The Diagram
@@ -126,13 +141,16 @@ Run both and compare the results. You'll see about 10% better performance with p
 test-pgx/
 ├── docker-compose.yml           # Sets up PostgreSQL and PgBouncer
 ├── main.go                      # The benchmark code
+├── otel.go                      # OpenTelemetry tracer setup
+├── trace_exporter.go            # Trace export logic
 ├── pgbouncer/
 │   ├── pgbouncer-session.ini    # Session mode config
 │   ├── pgbouncer-transaction.ini # Transaction mode config
 │   └── userlist.txt             # Auth credentials
 ├── init-db/
 │   └── init.sql                 # Creates test table with 100 records
-└── benchmark_results.txt        # Your results end up here
+├── benchmark_results.txt        # Your results end up here
+└── trace_slowest_*.json         # Exported trace files (OTLP format)
 ```
 
 ## Cleanup
@@ -153,6 +171,8 @@ docker compose down -v
 - [pgx docs](https://github.com/jackc/pgx) - The Go PostgreSQL driver we're using
 - [PgBouncer docs](https://www.pgbouncer.org/) - The connection pooler
 - [PostgreSQL connection pooling](https://www.postgresql.org/docs/current/runtime-config-connection.html) - How PostgreSQL handles connections
+- [OpenTelemetry Go](https://opentelemetry.io/docs/languages/go/) - Distributed tracing
+- [Grafana Tempo](https://grafana.com/oss/tempo/) - Trace visualization
 
 ---
 
