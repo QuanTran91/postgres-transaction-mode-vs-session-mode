@@ -31,6 +31,10 @@ const (
 	DefaultHealthCheckPeriod     = 30 * time.Second
 	DefaultMaxConnLifetimeJitter = 3 * time.Minute
 	NumberOfPoolInstances        = 6 // Simulate multiple Go server instances (each with own pool)
+
+	// Trace configuration
+	NumSlowestToExport = 5 // Export top 5 slowest requests per connection type
+	ServiceName        = "pgx-benchmark"
 )
 
 // BenchmarkResult stores metrics for a single benchmark run
@@ -56,11 +60,19 @@ type Config struct {
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
+	// Initialize OpenTelemetry tracer
+	collector, cleanup, err := InitTracer(ServiceName)
+	if err != nil {
+		log.Fatalf("Failed to initialize tracer: %v", err)
+	}
+	defer cleanup()
+
 	fmt.Println("==========================================================")
 	fmt.Println("PGX Connection Pool Benchmark")
 	fmt.Println("Testing: Direct PostgreSQL, PgBouncer Session & Transaction Modes")
 	fmt.Printf("Pool Config: MaxConns=%d, MinConns=%d, MaxIdleTime=%v\n",
 		DefaultMaxConnections, DefaultMinConnections, DefaultMaxConnIdleTime)
+	fmt.Printf("Tracing: Enabled (exporting %d slowest traces per connection type)\n", NumSlowestToExport)
 	fmt.Println("==========================================================\n")
 
 	// Connection configurations
@@ -90,7 +102,7 @@ func main() {
 		for _, concurrency := range concurrencyLevels {
 			// Warmup run
 			fmt.Printf("Warmup Run - Concurrency: %d\n", concurrency)
-			warmupResult := runBenchmark(config, concurrency, true)
+			warmupResult := runBenchmark(config, concurrency, true, collector)
 			allResults = append(allResults, warmupResult)
 
 			// Wait a bit between warmup and actual run
@@ -98,7 +110,7 @@ func main() {
 
 			// Actual benchmark run
 			fmt.Printf("⚡ Actual Run - Concurrency: %d\n", concurrency)
-			actualResult := runBenchmark(config, concurrency, false)
+			actualResult := runBenchmark(config, concurrency, false, collector)
 			allResults = append(allResults, actualResult)
 
 			// Show comparison
@@ -112,6 +124,11 @@ func main() {
 		fmt.Printf("\n⏸Testing Idle Connection Release (10s idle period)\n")
 		idleResult := runIdleTest(config)
 		fmt.Printf("Idle Test Result: Avg reacquisition time: %v\n\n", idleResult)
+
+		// Export slowest traces for this connection type
+		if err := ExportSlowestTraces(collector, config.ConnType, NumSlowestToExport); err != nil {
+			log.Printf("Warning: Failed to export traces for %s: %v", config.ConnType, err)
+		}
 	}
 
 	// Generate final report
@@ -119,8 +136,13 @@ func main() {
 }
 
 // runBenchmark executes a benchmark with specified concurrency
-func runBenchmark(config Config, concurrency int, isWarmup bool) BenchmarkResult {
+func runBenchmark(config Config, concurrency int, isWarmup bool, collector *TraceCollector) BenchmarkResult {
 	ctx := context.Background()
+	tracer := GetTracer("pgx-benchmark")
+
+	// Create root span for benchmark run
+	ctx, benchSpan := tracer.Start(ctx, "benchmark_run")
+	defer benchSpan.End()
 
 	// Create multiple pool instances to simulate multiple Go server instances
 	pools := make([]*pgxpool.Pool, NumberOfPoolInstances)
@@ -163,15 +185,24 @@ func runBenchmark(config Config, concurrency int, isWarmup bool) BenchmarkResult
 			poolIndex := workerID % NumberOfPoolInstances
 			pool := pools[poolIndex]
 
+			// Create worker span for this request
+			workerCtx, workerSpan := tracer.Start(ctx, "worker.request")
+			defer workerSpan.End()
+
 			// Execute query - pool automatically acquires connection
 			queryStart := time.Now()
 			log.Printf("[QUERY START] Worker %d | Pool Instance %d | Type: %s | Goroutine: %d | Time: %s",
 				workerID, poolIndex, config.ConnType, getGoroutineID(), queryStart.Format(time.RFC3339Nano))
 
-			rows, err := pool.Query(ctx, "SELECT id, name FROM benchmark_data WHERE id = $1", (workerID%100)+1)
+			// Span: Connection acquisition
+			_, connSpan := tracer.Start(workerCtx, "pool.acquire_connection")
+			rows, err := pool.Query(workerCtx, "SELECT id, name FROM benchmark_data WHERE id = $1", (workerID%100)+1)
+			connSpan.End()
+
 			if err != nil {
 				log.Printf("[ERROR] Worker %d (Pool %d) query failed: %v", workerID, poolIndex, err)
 				acquisitionTimes[workerID] = 0
+				workerSpan.RecordError(err)
 				return
 			}
 
@@ -181,23 +212,28 @@ func runBenchmark(config Config, concurrency int, isWarmup bool) BenchmarkResult
 			log.Printf("[QUERY END] Worker %d | Pool Instance %d | Type: %s | Duration: %v",
 				workerID, poolIndex, config.ConnType, queryDuration)
 
-			// Read results
+			// Span: Row scanning
+			_, scanSpan := tracer.Start(workerCtx, "db.scan")
 			var count int
 			var name string
 			if rows.Next() {
 				err = rows.Scan(&count, &name)
 				if err != nil {
 					log.Printf("[ERROR] Worker %d (Pool %d) scan failed: %v", workerID, poolIndex, err)
+					scanSpan.RecordError(err)
 				} else {
 					log.Printf("[RESULT] Worker %d | Pool Instance %d | Result: id=%d, name=%s",
 						workerID, poolIndex, count, name)
 				}
 			}
+			scanSpan.End()
 
-			// Close rows - this releases the connection back to pool
+			// Span: Connection release
+			_, releaseSpan := tracer.Start(workerCtx, "pool.release_connection")
 			closeStart := time.Now()
 			rows.Close()
 			closeDuration := time.Since(closeStart)
+			releaseSpan.End()
 
 			log.Printf("[CLOSE] Worker %d | Pool Instance %d | Duration: %v", workerID, poolIndex, closeDuration)
 		}(i)
