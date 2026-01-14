@@ -24,7 +24,7 @@ const (
 
 // Connection pool configuration constants
 const (
-	DefaultMaxConnections        = 10 // Bottleneck: 3000 goroutines competing for 10 connections
+	DefaultMaxConnections        = 50
 	DefaultMinConnections        = 2
 	DefaultMaxConnLifetime       = 30 * time.Minute
 	DefaultMaxConnIdleTime       = 30 * time.Second // Reduced from 10 minutes for faster connection release
@@ -366,7 +366,7 @@ func printResult(result BenchmarkResult) {
 
 // showComparison shows warmup vs actual comparison
 func showComparison(warmup, actual BenchmarkResult) {
-	fmt.Printf("📈 Warmup vs Actual Comparison:\n")
+	fmt.Printf("Warmup vs Actual Comparison:\n")
 
 	durationImprovement := float64(warmup.TotalDuration-actual.TotalDuration) / float64(warmup.TotalDuration) * 100
 	avgAcqImprovement := float64(warmup.AvgAcquisitionTime-actual.AvgAcquisitionTime) / float64(warmup.AvgAcquisitionTime) * 100
