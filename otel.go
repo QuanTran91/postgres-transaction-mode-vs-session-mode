@@ -51,6 +51,13 @@ func (tc *TraceCollector) GetSpans() []sdktrace.ReadOnlySpan {
 	return tc.spans
 }
 
+// ClearSpans clears all collected spans
+func (tc *TraceCollector) ClearSpans() {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	tc.spans = make([]sdktrace.ReadOnlySpan, 0)
+}
+
 // InitTracer initializes OpenTelemetry tracer with in-memory collector
 func InitTracer(serviceName string) (*TraceCollector, func(), error) {
 	collector := NewTraceCollector()

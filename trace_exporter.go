@@ -53,6 +53,8 @@ func FindSlowestTraces(collector *TraceCollector, n int) []TraceInfo {
 		return traces[i].Duration > traces[j].Duration
 	})
 
+	fmt.Printf("Debug: Found %d total traces, returning top %d\n", len(traces), n)
+
 	// Return top N
 	if len(traces) > n {
 		traces = traces[:n]
@@ -61,7 +63,7 @@ func FindSlowestTraces(collector *TraceCollector, n int) []TraceInfo {
 	return traces
 }
 
-// ExportSlowestTraces exports the slowest traces to JSON files
+// ExportSlowestTraces exports the slowest traces to a single JSON file
 func ExportSlowestTraces(collector *TraceCollector, connType ConnectionType, numToExport int) error {
 	slowestTraces := FindSlowestTraces(collector, numToExport)
 
@@ -71,18 +73,26 @@ func ExportSlowestTraces(collector *TraceCollector, connType ConnectionType, num
 
 	fmt.Printf("\nExporting %d slowest traces for %s...\n", len(slowestTraces), connType)
 
+	// Collect all spans from all slowest traces
+	allSpans := make([]sdktrace.ReadOnlySpan, 0)
+	for _, traceInfo := range slowestTraces {
+		allSpans = append(allSpans, traceInfo.Spans...)
+	}
+
+	// Create single filename for all traces
 	timestamp := time.Now().Format("20060102150405")
+	filename := fmt.Sprintf("trace_slowest_%s_top%d_%s.json", connType, len(slowestTraces), timestamp)
 
-	for i, traceInfo := range slowestTraces {
-		rank := i + 1
-		filename := fmt.Sprintf("trace_slowest_%s_%d_%s.json", connType, rank, timestamp)
+	err := ExportTraceToJSON(allSpans, filename)
+	if err != nil {
+		return fmt.Errorf("failed to export traces: %w", err)
+	}
 
-		err := ExportTraceToJSON(traceInfo.Spans, filename)
-		if err != nil {
-			return fmt.Errorf("failed to export trace %d: %w", rank, err)
-		}
-
-		fmt.Printf("  ✓ Exported trace %d: %v (%s)\n", rank, traceInfo.Duration, filename)
+	// Show summary of exported traces
+	fmt.Printf("  ✓ Exported %d traces to %s\n", len(slowestTraces), filename)
+	fmt.Printf("  Top %d slowest durations:\n", numToExport)
+	for i := 0; i < numToExport && i < len(slowestTraces); i++ {
+		fmt.Printf("    %d. %v\n", i+1, slowestTraces[i].Duration)
 	}
 
 	return nil

@@ -33,7 +33,7 @@ const (
 	NumberOfPoolInstances        = 6 // Simulate multiple Go server instances (each with own pool)
 
 	// Trace configuration
-	NumSlowestToExport = 5 // Export top 5 slowest requests per connection type
+	NumSlowestToExport = 200 // Export top n slowest requests per connection type
 	ServiceName        = "pgx-benchmark"
 )
 
@@ -88,13 +88,16 @@ func main() {
 	}
 
 	// Concurrency levels to test
-	concurrencyLevels := []int{5000}
+	concurrencyLevels := []int{1000}
 
 	// Store all results
 	var allResults []BenchmarkResult
 
 	// Run benchmarks for each configuration
 	for _, config := range configs {
+		// Clear previous traces before starting new connection type
+		collector.ClearSpans()
+
 		fmt.Printf("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 		fmt.Printf("Testing: %s\n", config.ConnType)
 		fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
@@ -140,10 +143,6 @@ func runBenchmark(config Config, concurrency int, isWarmup bool, collector *Trac
 	ctx := context.Background()
 	tracer := GetTracer("pgx-benchmark")
 
-	// Create root span for benchmark run
-	ctx, benchSpan := tracer.Start(ctx, "benchmark_run")
-	defer benchSpan.End()
-
 	// Create multiple pool instances to simulate multiple Go server instances
 	pools := make([]*pgxpool.Pool, NumberOfPoolInstances)
 	for i := 0; i < NumberOfPoolInstances; i++ {
@@ -185,8 +184,8 @@ func runBenchmark(config Config, concurrency int, isWarmup bool, collector *Trac
 			poolIndex := workerID % NumberOfPoolInstances
 			pool := pools[poolIndex]
 
-			// Create worker span for this request
-			workerCtx, workerSpan := tracer.Start(ctx, "worker.request")
+			// Create independent trace for this request (not a child of benchmark_run)
+			workerCtx, workerSpan := tracer.Start(context.Background(), "worker.request")
 			defer workerSpan.End()
 
 			// Execute query - pool automatically acquires connection
